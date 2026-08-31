@@ -1,12 +1,17 @@
 name: Build R (macOS)
 
-# Phase 1b: builds R from source on native GitHub-hosted macOS arm64 runners, applies the same relocatability patch as Linux, and verifies it by moving the built tree before running Rscript.
-
 on:
   workflow_dispatch:
     inputs:
       r_versions:
         description: 'JSON array of R versions to build, e.g. ["4.4.2","4.3.3"]'
+        required: false
+        default: '["4.4.2"]'
+  workflow_call:
+    inputs:
+      r_versions:
+        description: 'JSON array of R versions to build, e.g. ["4.4.2","4.3.3"]'
+        type: string
         required: false
         default: '["4.4.2"]'
   push:
@@ -20,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        r_version: ${{ fromJSON(github.event.inputs.r_versions || '["4.4.2"]') }}
+        r_version: ${{ fromJSON(inputs.r_versions || '["4.4.2"]') }}
     runs-on: macos-latest
     env:
       R_VERSION: ${{ matrix.r_version }}
@@ -48,8 +53,6 @@ jobs:
       - name: Download R source
         run: |
           curl -fLO "https://cran.r-project.org/src/base/R-4/R-${R_VERSION}.tar.gz"
-          echo "Source tarball sha256 (record this and pin it explicitly once verified):"
-          shasum -a 256 "R-${R_VERSION}.tar.gz"
           tar -xzf "R-${R_VERSION}.tar.gz"
 
       - name: Configure and build (matches cauldron-go's proven build-env-darwin-arm64.yml flags)

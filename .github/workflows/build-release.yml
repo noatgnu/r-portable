@@ -1,12 +1,17 @@
 name: Build R (Linux spike)
 
-# Phase 1a spike: proves the build + relocatability pipeline across distro families/versions and R versions; uploads artifacts only, does not publish a Release yet.
-
 on:
   workflow_dispatch:
     inputs:
       r_versions:
         description: 'JSON array of R versions to build, e.g. ["4.4.2","4.3.3"] -- old versions are already published from earlier runs, so only override this when you actually need a fresh build of one'
+        required: false
+        default: '["4.4.2"]'
+  workflow_call:
+    inputs:
+      r_versions:
+        description: 'JSON array of R versions to build, e.g. ["4.4.2","4.3.3"]'
+        type: string
         required: false
         default: '["4.4.2"]'
   push:
@@ -20,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        r_version: ${{ fromJSON(github.event.inputs.r_versions || '["4.4.2"]') }}
+        r_version: ${{ fromJSON(inputs.r_versions || '["4.4.2"]') }}
         distro:
           - { name: ubuntu-22.04, image: 'ubuntu:22.04', family: debian }
           - { name: ubuntu-24.04, image: 'ubuntu:24.04', family: debian }
@@ -69,8 +74,6 @@ jobs:
       - name: Download R source
         run: |
           curl -fLO "https://cran.r-project.org/src/base/R-4/R-${R_VERSION}.tar.gz"
-          echo "Source tarball sha256 (record this and pin it explicitly once verified):"
-          sha256sum "R-${R_VERSION}.tar.gz"
           tar -xzf "R-${R_VERSION}.tar.gz"
 
       - name: Configure and build

@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  determine-version:
+    runs-on: ubuntu-latest
+    outputs:
+      r_version: ${{ steps.version.outputs.r_version }}
+    steps:
+      - id: version
+        run: echo "r_version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+  build-linux:
+    needs: determine-version
+    uses: ./.github/workflows/build-release.yml
+    with:
+      r_versions: ${{ format('["{0}"]', needs.determine-version.outputs.r_version) }}
+
+  build-macos:
+    needs: determine-version
+    uses: ./.github/workflows/build-release-macos.yml
+    with:
+      r_versions: ${{ format('["{0}"]', needs.determine-version.outputs.r_version) }}
+
+  build-windows:
+    needs: determine-version
+    uses: ./.github/workflows/build-release-windows.yml
+    with:
+      r_version: ${{ needs.determine-version.outputs.r_version }}
+
+  publish:
+    needs: [determine-version, build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List release assets
+        run: ls -la dist
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: R ${{ needs.determine-version.outputs.r_version }}
+          generate_release_notes: true
+          files: dist/*

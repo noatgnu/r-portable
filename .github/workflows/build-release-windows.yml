@@ -1,9 +1,19 @@
 name: Build R (Windows spike)
 
-# Phase 1c spike: builds R from source on a native windows-latest runner via Rtools, following R Core's own documented build process (cran.r-project.org/bin/windows/base/howto-R-4.4.html). Single version, no matrix yet -- same "prove it, then broaden" methodology as the Linux spike.
-
 on:
   workflow_dispatch:
+    inputs:
+      r_version:
+        description: 'R version to build, e.g. 4.4.2 -- must have a matching Rtools44 build below'
+        required: false
+        default: '4.4.2'
+  workflow_call:
+    inputs:
+      r_version:
+        description: 'R version to build, e.g. 4.4.2 -- must have a matching Rtools44 build below'
+        type: string
+        required: false
+        default: '4.4.2'
   push:
     branches: [main]
     paths:
@@ -14,7 +24,7 @@ jobs:
   build-windows:
     runs-on: windows-latest
     env:
-      R_VERSION: '4.4.2'
+      R_VERSION: ${{ inputs.r_version || '4.4.2' }}
       RTOOLS_INSTALLER: 'rtools44-6459-6401.exe'
       RTOOLS_TCLTK: 'tcltk-6459-6458.zip'
       MSYS: 'winsymlinks:lnk'
