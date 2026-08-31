@@ -61,7 +61,8 @@ jobs:
       - name: Install to staging prefix
         working-directory: R-${{ env.R_VERSION }}
         run: |
-          mkdir -p /opt/r-portable-build
+          sudo mkdir -p /opt/r-portable-build
+          sudo chown "$USER" /opt/r-portable-build
           make install
 
       - name: Diagnose dylib dependencies before patching
