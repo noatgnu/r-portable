@@ -17,13 +17,9 @@ jobs:
       R_VERSION: '4.4.2'
       RTOOLS_INSTALLER: 'rtools44-6459-6401.exe'
       RTOOLS_TCLTK: 'tcltk-6459-6458.zip'
+      MSYS: 'winsymlinks:lnk'
     steps:
       - uses: actions/checkout@v4
-
-      - name: Enable Developer Mode (R's source tarball contains real symlinks, which need this privilege on Windows)
-        shell: pwsh
-        run: |
-          New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" -Name "AllowDevelopmentWithoutDevLicense" -Value 1 -PropertyType DWORD -Force
 
       - name: Install Rtools44 (silent, matches R 4.4.x per cran.r-project.org/bin/windows/Rtools)
         shell: pwsh
