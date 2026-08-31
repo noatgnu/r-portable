@@ -89,10 +89,15 @@ jobs:
 
       - name: Relocatability test -- move the tree and run R from an unrelated path
         run: |
+          sudo apt-get install -y --no-install-recommends strace
           mkdir -p /tmp/relocated/some/other/path
           mv /opt/r-portable-build/* /tmp/relocated/some/other/path/
-          echo "=== ldd on the relocated Rscript.real, using the new LD_LIBRARY_PATH ==="
-          LD_LIBRARY_PATH="/tmp/relocated/some/other/path/lib/R/lib" ldd /tmp/relocated/some/other/path/bin/Rscript.real || true
+          echo "=== strace of the relocated Rscript.real, with the same env vars the wrapper sets ==="
+          R_HOME="/tmp/relocated/some/other/path/lib/R" \
+          LD_LIBRARY_PATH="/tmp/relocated/some/other/path/lib/R/lib" \
+          strace -f -e trace=execve,openat,open -o /tmp/strace.log /tmp/relocated/some/other/path/bin/Rscript.real -e 'cat(R.version.string)' || true
+          grep -E "ENOENT|execve" /tmp/strace.log | tail -100
+          echo "=== normal run via the wrapper (bin/Rscript) ==="
           RESULT=$(/tmp/relocated/some/other/path/bin/Rscript -e 'cat(R.version.string)')
           echo "Relocated R reports: $RESULT"
           echo "$RESULT" | grep -q "R version ${R_VERSION}" || (echo "::error::Relocated R did not report the expected version -- relocation is likely broken and needs a path-patching step" && exit 1)
