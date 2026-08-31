@@ -1,0 +1,84 @@
+name: Build R (Windows spike)
+
+# Phase 1c spike: builds R from source on a native windows-latest runner via Rtools, following R Core's own documented build process (cran.r-project.org/bin/windows/base/howto-R-4.4.html). Single version, no matrix yet -- same "prove it, then broaden" methodology as the Linux spike.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-release-windows.yml'
+      - 'scripts/patch-relocatable.py'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    env:
+      R_VERSION: '4.4.2'
+      RTOOLS_INSTALLER: 'rtools44-6459-6401.exe'
+      RTOOLS_TCLTK: 'tcltk-6459-6458.zip'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rtools44 (silent, matches R 4.4.x per cran.r-project.org/bin/windows/Rtools)
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://cran.r-project.org/bin/windows/Rtools/rtools44/files/${env:RTOOLS_INSTALLER}" -OutFile rtools-installer.exe
+          Start-Process -FilePath rtools-installer.exe -ArgumentList "/VERYSILENT", "/DIR=C:\rtools44" -Wait
+
+      - name: Install MSYS2 packages needed beyond the base Rtools toolchain
+        shell: C:\rtools44\usr\bin\bash.exe -leo pipefail '{0}'
+        run: pacman -Sy --noconfirm unzip zip
+
+      - name: Download R source and Tcl/Tk bundle
+        shell: C:\rtools44\usr\bin\bash.exe -leo pipefail '{0}'
+        run: |
+          curl -fLO "https://cran.r-project.org/src/base/R-4/R-${R_VERSION}.tar.gz"
+          tar -xzf "R-${R_VERSION}.tar.gz"
+          curl -fLO "https://cran.r-project.org/bin/windows/Rtools/rtools44/files/${RTOOLS_TCLTK}"
+          cd "R-${R_VERSION}"
+          unzip -q "../${RTOOLS_TCLTK}"
+
+      - name: Build R (make rsync-recommended && make all recommended, no installer/PDF manuals needed)
+        shell: C:\rtools44\usr\bin\bash.exe -leo pipefail '{0}'
+        working-directory: R-${{ env.R_VERSION }}/src/gnuwin32
+        run: |
+          export PATH="/x86_64-w64-mingw32.static.posix/bin:$PATH"
+          export TAR="/usr/bin/tar"
+          export TAR_OPTIONS="--force-local"
+          which make gcc tar
+          make rsync-recommended
+          make all recommended
+
+      - name: Diagnose the resulting directory layout before assuming a structure
+        shell: C:\rtools44\usr\bin\bash.exe -leo pipefail '{0}'
+        run: find "R-${R_VERSION}/bin" -maxdepth 3
+
+      - name: Relocatability test -- move the tree and run Rscript.exe from an unrelated path, no env var overrides
+        shell: C:\rtools44\usr\bin\bash.exe -leo pipefail '{0}'
+        run: |
+          mkdir -p /tmp/relocated/some/other/path
+          mv "R-${R_VERSION}/bin"/* /tmp/relocated/some/other/path/
+          RESULT=$(/tmp/relocated/some/other/path/Rscript.exe -e 'cat(R.version.string)')
+          echo "Relocated R reports: $RESULT"
+          echo "$RESULT" | grep -q "R version ${R_VERSION}" || (echo "::error::Relocated R did not report the expected version -- relocation is broken on Windows too, or the Rscript.exe path guess above is wrong (see the diagnostic step's output)" && exit 1)
+
+      - name: Package archive
+        shell: C:\rtools44\usr\bin\bash.exe -leo pipefail '{0}'
+        run: |
+          cd /tmp/relocated/some/other/path
+          zip -qr "$(cygpath -u "$GITHUB_WORKSPACE")/r-portable-${R_VERSION}-windows-x86_64.zip" .
+
+      - name: Generate checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash "r-portable-${env:R_VERSION}-windows-x86_64.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  r-portable-${env:R_VERSION}-windows-x86_64.zip" | Out-File -FilePath "r-portable-${env:R_VERSION}-windows-x86_64.zip.sha256" -Encoding ASCII -NoNewline
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: r-portable-${{ env.R_VERSION }}-windows-x86_64
+          path: |
+            r-portable-*.zip
+            r-portable-*.zip.sha256
