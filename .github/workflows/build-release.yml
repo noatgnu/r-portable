@@ -56,6 +56,23 @@ jobs:
           sudo chown "$USER" /opt/r-portable-build
           make install
 
+      - name: Wrap R/Rscript so R_HOME is resolved relative to the binary's own location
+        run: |
+          cd /opt/r-portable-build/bin
+          for bin in R Rscript; do
+            if [ -f "$bin" ] && [ ! -f "$bin.real" ]; then
+              mv "$bin" "$bin.real"
+              cat > "$bin" <<'WRAPPER'
+#!/bin/sh
+DIR=$(cd "$(dirname "$0")" && pwd)
+export R_HOME="$DIR/../lib/R"
+exec "$DIR/BINNAME.real" "$@"
+WRAPPER
+              sed -i "s/BINNAME/$bin/" "$bin"
+              chmod +x "$bin"
+            fi
+          done
+
       - name: Relocatability test -- move the tree and run R from an unrelated path
         run: |
           mkdir -p /tmp/relocated/some/other/path
