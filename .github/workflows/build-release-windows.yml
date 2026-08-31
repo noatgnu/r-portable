@@ -58,11 +58,11 @@ jobs:
       - name: Relocatability test -- move the tree and run Rscript.exe from an unrelated path, no env var overrides
         shell: C:\rtools44\usr\bin\bash.exe -leo pipefail '{0}'
         run: |
-          mkdir -p /tmp/relocated/some/other/path
-          mv "R-${R_VERSION}/bin"/* /tmp/relocated/some/other/path/
-          RESULT=$(/tmp/relocated/some/other/path/Rscript.exe -e 'cat(R.version.string)')
+          mkdir -p /tmp/relocated/some/other
+          mv "R-${R_VERSION}" /tmp/relocated/some/other/path
+          RESULT=$(/tmp/relocated/some/other/path/bin/Rscript.exe -e 'cat(R.version.string)')
           echo "Relocated R reports: $RESULT"
-          echo "$RESULT" | grep -q "R version ${R_VERSION}" || (echo "::error::Relocated R did not report the expected version -- relocation is broken on Windows too, or the Rscript.exe path guess above is wrong (see the diagnostic step's output)" && exit 1)
+          echo "$RESULT" | grep -q "R version ${R_VERSION}" || (echo "::error::Relocated R did not report the expected version -- relocation is genuinely broken on Windows, R_HOME resolution needs investigating" && exit 1)
 
       - name: Package archive
         shell: C:\rtools44\usr\bin\bash.exe -leo pipefail '{0}'
