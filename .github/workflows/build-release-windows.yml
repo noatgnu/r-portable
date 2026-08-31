@@ -42,8 +42,8 @@ jobs:
 
       - name: Build R (make rsync-recommended && make all recommended, no installer/PDF manuals needed)
         shell: C:\rtools44\usr\bin\bash.exe -leo pipefail '{0}'
-        working-directory: R-${{ env.R_VERSION }}/src/gnuwin32
         run: |
+          cd "R-${R_VERSION}/src/gnuwin32"
           export PATH="/x86_64-w64-mingw32.static.posix/bin:$PATH"
           export TAR="/usr/bin/tar"
           export TAR_OPTIONS="--force-local"
