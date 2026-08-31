@@ -1,0 +1,82 @@
+name: Build R (Linux spike)
+
+# Phase 1a spike: proves the build + relocatability pipeline; uploads an artifact only, does not publish a Release yet.
+
+on:
+  workflow_dispatch:
+    inputs:
+      r_version:
+        description: 'R version to build (must exist under https://cran.r-project.org/src/base/R-4/)'
+        required: true
+        default: '4.4.2'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-release.yml'
+
+jobs:
+  build-linux-x86_64:
+    runs-on: ubuntu-latest
+    env:
+      R_VERSION: ${{ github.event.inputs.r_version || '4.4.2' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential gfortran \
+            libreadline-dev libpcre2-dev libbz2-dev liblzma-dev \
+            libcurl4-openssl-dev zlib1g-dev libpng-dev libjpeg-dev \
+            xz-utils
+
+      - name: Download R source
+        run: |
+          curl -fLO "https://cran.r-project.org/src/base/R-4/R-${R_VERSION}.tar.gz"
+          echo "Source tarball sha256 (record this and pin it explicitly once verified):"
+          sha256sum "R-${R_VERSION}.tar.gz"
+          tar -xzf "R-${R_VERSION}.tar.gz"
+
+      - name: Configure and build (relocatable, headless)
+        working-directory: R-${{ env.R_VERSION }}
+        run: |
+          ./configure \
+            --prefix=/opt/r-portable-build \
+            --without-x \
+            --enable-R-shlib \
+            --disable-java \
+            --with-recommended-packages=yes
+          make -j"$(nproc)"
+
+      - name: Install to staging prefix
+        working-directory: R-${{ env.R_VERSION }}
+        run: |
+          sudo mkdir -p /opt/r-portable-build
+          sudo chown "$USER" /opt/r-portable-build
+          make install
+
+      - name: Relocatability test -- move the tree and run R from an unrelated path
+        run: |
+          mkdir -p /tmp/relocated/some/other/path
+          mv /opt/r-portable-build/* /tmp/relocated/some/other/path/
+          RESULT=$(/tmp/relocated/some/other/path/bin/Rscript -e 'cat(R.version.string)')
+          echo "Relocated R reports: $RESULT"
+          echo "$RESULT" | grep -q "R version ${R_VERSION}" || (echo "::error::Relocated R did not report the expected version -- relocation is likely broken and needs a path-patching step" && exit 1)
+
+      - name: Package archive
+        run: |
+          cd /tmp/relocated/some/other/path
+          tar -cJf "$GITHUB_WORKSPACE/r-portable-${R_VERSION}-linux-x86_64.tar.xz" .
+
+      - name: Generate checksum
+        run: |
+          sha256sum "r-portable-${R_VERSION}-linux-x86_64.tar.xz" > "r-portable-${R_VERSION}-linux-x86_64.tar.xz.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: r-portable-${{ env.R_VERSION }}-linux-x86_64
+          path: |
+            r-portable-*.tar.xz
+            r-portable-*.tar.xz.sha256
