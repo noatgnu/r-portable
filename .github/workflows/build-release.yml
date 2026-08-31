@@ -57,8 +57,8 @@ jobs:
         run: |
           dnf install -y epel-release dnf-plugins-core
           dnf config-manager --set-enabled crb 2>/dev/null || dnf config-manager --set-enabled powertools 2>/dev/null || true
-          dnf install -y \
-            gcc gcc-c++ gcc-gfortran make \
+          dnf install -y --allowerasing \
+            gcc gcc-c++ gcc-gfortran make which \
             libX11-devel libXext-devel libXrender-devel libXtst-devel libXt-devel \
             libpng-devel libjpeg-turbo-devel xz-devel pcre2-devel \
             libcurl-devel harfbuzz-devel fribidi-devel cairo-devel \
