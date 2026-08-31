@@ -4,6 +4,11 @@ name: Build R (Linux spike)
 
 on:
   workflow_dispatch:
+    inputs:
+      r_versions:
+        description: 'JSON array of R versions to build, e.g. ["4.4.2","4.3.3"] -- old versions are already published from earlier runs, so only override this when you actually need a fresh build of one'
+        required: false
+        default: '["4.4.2"]'
   push:
     branches: [main]
     paths:
@@ -15,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        r_version: ['4.4.2', '4.3.3']
+        r_version: ${{ fromJSON(github.event.inputs.r_versions || '["4.4.2"]') }}
         distro:
           - { name: ubuntu-22.04, image: 'ubuntu:22.04', family: debian }
           - { name: ubuntu-24.04, image: 'ubuntu:24.04', family: debian }
@@ -33,6 +38,9 @@ jobs:
 
       - name: Install build dependencies (Debian/Ubuntu family)
         if: matrix.distro.family == 'debian'
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          TZ: Etc/UTC
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
@@ -42,7 +50,7 @@ jobs:
             libx11-dev libxext-dev libxrender-dev libxtst-dev libcairo2-dev \
             tcl-dev tk-dev libhdf5-dev libblosc-dev libhiredis-dev \
             libopenmpi-dev liblzo2-dev libomp-dev libreadline-dev \
-            bzip2 xz-utils curl ca-certificates python3
+            bzip2 libbz2-dev xz-utils curl ca-certificates python3
 
       - name: Install build dependencies (RHEL family)
         if: matrix.distro.family == 'rhel'
@@ -54,9 +62,9 @@ jobs:
             libX11-devel libXext-devel libXrender-devel libXtst-devel libXt-devel \
             libpng-devel libjpeg-turbo-devel xz-devel pcre2-devel \
             libcurl-devel harfbuzz-devel fribidi-devel cairo-devel \
-            tcl-devel tk-devel hdf5-devel c-blosc-devel hiredis-devel \
-            openmpi-devel lzo-devel readline-devel \
+            tcl-devel tk-devel readline-devel \
             bzip2 bzip2-devel xz curl ca-certificates python3
+          dnf install -y --skip-broken hdf5-devel c-blosc-devel hiredis-devel openmpi-devel lzo-devel || true
 
       - name: Download R source
         run: |
