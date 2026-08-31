@@ -5,11 +5,6 @@ import re
 import sys
 from pathlib import Path
 
-R_SH_FILES = {
-    "bin/R": "../lib/R",
-    "lib/R/bin/R": "..",
-}
-
 RSCRIPT_WRAPPER = """#!/bin/sh
 DIR=$(cd "$(dirname "$0")" && pwd)
 case "$1" in
@@ -18,7 +13,13 @@ case "$1" in
 esac
 """
 
-RSCRIPT_FILES = ["bin/Rscript", "lib/R/bin/Rscript"]
+
+def find_r_home_subdir(prefix: Path) -> str:
+    """RHEL-family systems install into lib64/R, Debian-family (and macOS) into lib/R -- detect which one exists."""
+    for candidate in ("lib64/R", "lib/R"):
+        if (prefix / candidate).is_dir():
+            return candidate
+    sys.exit(f"error: neither lib/R nor lib64/R found under {prefix} -- R's install layout may have changed, review before proceeding")
 
 
 def patch_r_sh(path: Path, rel_to_r_home: str) -> None:
@@ -44,14 +45,22 @@ def main() -> None:
         sys.exit(f"usage: {sys.argv[0]} <r-install-prefix>")
 
     prefix = Path(sys.argv[1])
+    r_home_subdir = find_r_home_subdir(prefix)
+    print(f"detected R_HOME layout: {r_home_subdir}")
 
-    for rel_path, rel_to_r_home in R_SH_FILES.items():
+    r_sh_files = {
+        "bin/R": f"../{r_home_subdir}",
+        f"{r_home_subdir}/bin/R": "..",
+    }
+    rscript_files = ["bin/Rscript", f"{r_home_subdir}/bin/Rscript"]
+
+    for rel_path, rel_to_r_home in r_sh_files.items():
         path = prefix / rel_path
         if not path.exists():
             sys.exit(f"error: expected {path} to exist")
         patch_r_sh(path, rel_to_r_home)
 
-    for rel_path in RSCRIPT_FILES:
+    for rel_path in rscript_files:
         path = prefix / rel_path
         if not path.exists():
             sys.exit(f"error: expected {path} to exist")

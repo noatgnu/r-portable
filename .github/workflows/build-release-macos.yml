@@ -1,0 +1,94 @@
+name: Build R (macOS)
+
+# Phase 1b: builds R from source on native GitHub-hosted macOS runners (arm64 + x86_64), applies the same relocatability patch as Linux, and verifies it by moving the built tree before running Rscript.
+
+on:
+  workflow_dispatch:
+    inputs:
+      r_versions:
+        description: 'JSON array of R versions to build, e.g. ["4.4.2","4.3.3"]'
+        required: false
+        default: '["4.4.2"]'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-release-macos.yml'
+      - 'scripts/patch-relocatable.py'
+
+jobs:
+  build-macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        r_version: ${{ fromJSON(github.event.inputs.r_versions || '["4.4.2"]') }}
+        runner: [macos-latest, macos-13]
+    runs-on: ${{ matrix.runner }}
+    env:
+      R_VERSION: ${{ matrix.r_version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine architecture label
+        id: arch
+        run: |
+          if [ "$(uname -m)" = "arm64" ]; then echo "label=arm64" >> "$GITHUB_OUTPUT"; else echo "label=x86_64" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Install gfortran (CRAN's macOS toolchain -- Apple doesn't ship one)
+        run: |
+          curl -fLO https://mac.r-project.org/tools/gfortran-12.2-universal.pkg
+          sudo installer -pkg gfortran-12.2-universal.pkg -target /
+          GFORTRAN_BIN=$(dirname "$(find /opt /usr/local -name gfortran -type f 2>/dev/null | head -1)")
+          test -n "$GFORTRAN_BIN" || (echo "::error::gfortran not found after install -- the CRAN package layout may have changed" && exit 1)
+          echo "$GFORTRAN_BIN" >> "$GITHUB_PATH"
+
+      - name: Download R source
+        run: |
+          curl -fLO "https://cran.r-project.org/src/base/R-4/R-${R_VERSION}.tar.gz"
+          echo "Source tarball sha256 (record this and pin it explicitly once verified):"
+          shasum -a 256 "R-${R_VERSION}.tar.gz"
+          tar -xzf "R-${R_VERSION}.tar.gz"
+
+      - name: Configure and build
+        working-directory: R-${{ env.R_VERSION }}
+        run: |
+          ./configure --prefix=/opt/r-portable-build --enable-R-shlib --without-aqua --with-x=no
+          make -j"$(sysctl -n hw.ncpu)"
+
+      - name: Install to staging prefix
+        working-directory: R-${{ env.R_VERSION }}
+        run: |
+          mkdir -p /opt/r-portable-build
+          make install
+
+      - name: Diagnose dylib dependencies before patching
+        run: |
+          otool -L /opt/r-portable-build/lib/R/bin/exec/R 2>&1 || true
+          otool -L /opt/r-portable-build/lib/R/lib/libR.dylib 2>&1 || true
+
+      - name: Make R launchers relocatable (patches bin/R and lib/R/bin/R in place, replaces Rscript with a thin wrapper)
+        run: python3 scripts/patch-relocatable.py /opt/r-portable-build
+
+      - name: Relocatability test -- move the tree and run R from an unrelated path, no env var overrides
+        run: |
+          mkdir -p /tmp/relocated/some/other/path
+          mv /opt/r-portable-build/* /tmp/relocated/some/other/path/
+          RESULT=$(/tmp/relocated/some/other/path/bin/Rscript -e 'cat(R.version.string)')
+          echo "Relocated R reports: $RESULT"
+          echo "$RESULT" | grep -q "R version ${R_VERSION}" || (echo "::error::Relocated R did not report the expected version -- relocation is broken on macOS" && exit 1)
+
+      - name: Package archive
+        run: |
+          cd /tmp/relocated/some/other/path
+          tar -cJf "$GITHUB_WORKSPACE/r-portable-${R_VERSION}-macos-${{ steps.arch.outputs.label }}.tar.xz" .
+
+      - name: Generate checksum
+        run: |
+          shasum -a 256 "r-portable-${R_VERSION}-macos-${{ steps.arch.outputs.label }}.tar.xz" > "r-portable-${R_VERSION}-macos-${{ steps.arch.outputs.label }}.tar.xz.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: r-portable-${{ env.R_VERSION }}-macos-${{ steps.arch.outputs.label }}
+          path: |
+            r-portable-*.tar.xz
+            r-portable-*.tar.xz.sha256
