@@ -26,10 +26,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential gfortran \
-            libreadline-dev libpcre2-dev libbz2-dev liblzma-dev \
-            libcurl4-openssl-dev zlib1g-dev libpng-dev libjpeg-dev \
-            xz-utils
+            build-essential xorg-dev gfortran \
+            libpng-dev libjpeg-dev liblzma-dev libpcre2-dev \
+            libcurl4-openssl-dev libharfbuzz-dev libfribidi-dev \
+            libx11-dev libxext-dev libxrender-dev libxtst-dev libcairo2-dev \
+            tcl-dev tk-dev libhdf5-dev libblosc-dev libhiredis-dev \
+            libopenmpi-dev liblzo2-dev libomp-dev libreadline-dev \
+            bzip2 xz-utils
 
       - name: Download R source
         run: |
@@ -38,15 +41,19 @@ jobs:
           sha256sum "R-${R_VERSION}.tar.gz"
           tar -xzf "R-${R_VERSION}.tar.gz"
 
-      - name: Configure and build (relocatable, headless)
+      - name: Configure and build (matches cauldron-go's proven build-env-linux.yml flags)
         working-directory: R-${{ env.R_VERSION }}
+        env:
+          CPPFLAGS: -I/usr/include -I/usr/include/xorg
+          LDFLAGS: -L/usr/lib -L/usr/lib/xorg
+          CFLAGS: -I/usr/include
+          TCL_LIBRARY: /usr/lib/tcltk
+          TK_LIBRARY: /usr/lib/tcltk
+          PKG_CONFIG_PATH: /usr/lib/pkgconfig
+          C_INCLUDE_PATH: /usr/include
+          LIBRARY_PATH: /usr/lib
         run: |
-          ./configure \
-            --prefix=/opt/r-portable-build \
-            --without-x \
-            --enable-R-shlib \
-            --disable-java \
-            --with-recommended-packages=yes
+          ./configure --prefix=/opt/r-portable-build --enable-R-shlib --with-blas --with-lapack --with-tcltk --with-mpi
           make -j"$(nproc)"
 
       - name: Install to staging prefix
@@ -56,13 +63,26 @@ jobs:
           sudo chown "$USER" /opt/r-portable-build
           make install
 
-      - name: Wrap R/Rscript so R_HOME is resolved relative to the binary's own location
+      - name: Diagnose binary layout and library dependencies before wrapping
+        run: |
+          echo "=== find all ELF binaries under the install prefix ==="
+          find /opt/r-portable-build -type f -exec sh -c 'file "$1" | grep -q ELF && echo "$1"' _ {} \;
+          echo "=== ldd on bin/Rscript ==="
+          ldd /opt/r-portable-build/bin/Rscript || true
+          echo "=== ldd on bin/R (if a real binary, not a script) ==="
+          ldd /opt/r-portable-build/bin/R 2>&1 || true
+          echo "=== readelf -d (dynamic section incl. RPATH/RUNPATH) on Rscript ==="
+          readelf -d /opt/r-portable-build/bin/Rscript || true
+          echo "=== contents of lib/R/bin and lib/R/bin/exec ==="
+          find /opt/r-portable-build/lib/R/bin -maxdepth 2
+
+      - name: Wrap R/Rscript so R_HOME and LD_LIBRARY_PATH resolve relative to the binary's own location
         run: |
           cd /opt/r-portable-build/bin
           for bin in R Rscript; do
             if [ -f "$bin" ] && [ ! -f "$bin.real" ]; then
               mv "$bin" "$bin.real"
-              printf '#!/bin/sh\nDIR=$(cd "$(dirname "$0")" && pwd)\nexport R_HOME="$DIR/../lib/R"\nexec "$DIR/%s.real" "$@"\n' "$bin" > "$bin"
+              printf '#!/bin/sh\nDIR=$(cd "$(dirname "$0")" && pwd)\nexport R_HOME="$DIR/../lib/R"\nexport LD_LIBRARY_PATH="$DIR/../lib/R/lib:$LD_LIBRARY_PATH"\nexec "$DIR/%s.real" "$@"\n' "$bin" > "$bin"
               chmod +x "$bin"
             fi
           done
@@ -71,6 +91,8 @@ jobs:
         run: |
           mkdir -p /tmp/relocated/some/other/path
           mv /opt/r-portable-build/* /tmp/relocated/some/other/path/
+          echo "=== ldd on the relocated Rscript.real, using the new LD_LIBRARY_PATH ==="
+          LD_LIBRARY_PATH="/tmp/relocated/some/other/path/lib/R/lib" ldd /tmp/relocated/some/other/path/bin/Rscript.real || true
           RESULT=$(/tmp/relocated/some/other/path/bin/Rscript -e 'cat(R.version.string)')
           echo "Relocated R reports: $RESULT"
           echo "$RESULT" | grep -q "R version ${R_VERSION}" || (echo "::error::Relocated R did not report the expected version -- relocation is likely broken and needs a path-patching step" && exit 1)
