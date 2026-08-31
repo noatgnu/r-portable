@@ -51,6 +51,13 @@ jobs:
           make rsync-recommended
           make all recommended
 
+      - name: Run R's own regression test suite to verify the build is functionally correct, not just installable
+        shell: C:\rtools44\usr\bin\bash.exe -leo pipefail '{0}'
+        run: |
+          cd "R-${R_VERSION}/src/gnuwin32"
+          export PATH="/x86_64-w64-mingw32.static.posix/bin:$PATH"
+          make check
+
       - name: Diagnose the resulting directory layout before assuming a structure
         shell: C:\rtools44\usr\bin\bash.exe -leo pipefail '{0}'
         run: find "R-${R_VERSION}/bin" -maxdepth 3

@@ -65,6 +65,10 @@ jobs:
           sudo chown "$USER" /opt/r-portable-build
           make install
 
+      - name: Run R's own regression test suite to verify the build is functionally correct, not just installable
+        working-directory: R-${{ env.R_VERSION }}
+        run: make check
+
       - name: Diagnose dylib dependencies before patching
         run: |
           otool -L /opt/r-portable-build/lib/R/bin/exec/R 2>&1 || true

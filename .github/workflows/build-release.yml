@@ -94,6 +94,10 @@ jobs:
           mkdir -p /opt/r-portable-build
           make install
 
+      - name: Run R's own regression test suite to verify the build is functionally correct, not just installable
+        working-directory: R-${{ env.R_VERSION }}
+        run: make check
+
       - name: Make R launchers relocatable (patches bin/R and lib/R/bin/R in place, replaces Rscript with a thin wrapper)
         run: python3 scripts/patch-relocatable.py /opt/r-portable-build
 
