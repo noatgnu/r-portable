@@ -63,44 +63,16 @@ jobs:
           sudo chown "$USER" /opt/r-portable-build
           make install
 
-      - name: Diagnose binary layout and library dependencies before wrapping
-        run: |
-          echo "=== find all ELF binaries under the install prefix ==="
-          find /opt/r-portable-build -type f -exec sh -c 'file "$1" | grep -q ELF && echo "$1"' _ {} \;
-          echo "=== ldd on bin/Rscript ==="
-          ldd /opt/r-portable-build/bin/Rscript || true
-          echo "=== ldd on bin/R (if a real binary, not a script) ==="
-          ldd /opt/r-portable-build/bin/R 2>&1 || true
-          echo "=== readelf -d (dynamic section incl. RPATH/RUNPATH) on Rscript ==="
-          readelf -d /opt/r-portable-build/bin/Rscript || true
-          echo "=== contents of lib/R/bin and lib/R/bin/exec ==="
-          find /opt/r-portable-build/lib/R/bin -maxdepth 2
+      - name: Make R launchers relocatable (patches bin/R and lib/R/bin/R in place, replaces Rscript with a thin wrapper)
+        run: python3 scripts/patch-relocatable.py /opt/r-portable-build
 
-      - name: Wrap R/Rscript so R_HOME and LD_LIBRARY_PATH resolve relative to the binary's own location
+      - name: Relocatability test -- move the tree and run R from an unrelated path, no env var overrides
         run: |
-          cd /opt/r-portable-build/bin
-          for bin in R Rscript; do
-            if [ -f "$bin" ] && [ ! -f "$bin.real" ]; then
-              mv "$bin" "$bin.real"
-              printf '#!/bin/sh\nDIR=$(cd "$(dirname "$0")" && pwd)\nexport R_HOME="$DIR/../lib/R"\nexport LD_LIBRARY_PATH="$DIR/../lib/R/lib:$LD_LIBRARY_PATH"\nexec "$DIR/%s.real" "$@"\n' "$bin" > "$bin"
-              chmod +x "$bin"
-            fi
-          done
-
-      - name: Relocatability test -- move the tree and run R from an unrelated path
-        run: |
-          sudo apt-get install -y --no-install-recommends strace
           mkdir -p /tmp/relocated/some/other/path
           mv /opt/r-portable-build/* /tmp/relocated/some/other/path/
-          echo "=== strace of the relocated Rscript.real, with the same env vars the wrapper sets ==="
-          R_HOME="/tmp/relocated/some/other/path/lib/R" \
-          LD_LIBRARY_PATH="/tmp/relocated/some/other/path/lib/R/lib" \
-          strace -f -e trace=execve,openat,open -o /tmp/strace.log /tmp/relocated/some/other/path/bin/Rscript.real -e 'cat(R.version.string)' || true
-          grep -E "ENOENT|execve" /tmp/strace.log | tail -100
-          echo "=== normal run via the wrapper (bin/Rscript) ==="
           RESULT=$(/tmp/relocated/some/other/path/bin/Rscript -e 'cat(R.version.string)')
           echo "Relocated R reports: $RESULT"
-          echo "$RESULT" | grep -q "R version ${R_VERSION}" || (echo "::error::Relocated R did not report the expected version -- relocation is likely broken and needs a path-patching step" && exit 1)
+          echo "$RESULT" | grep -q "R version ${R_VERSION}" || (echo "::error::Relocated R did not report the expected version -- relocation is still broken" && exit 1)
 
       - name: Package archive
         run: |
