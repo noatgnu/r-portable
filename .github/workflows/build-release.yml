@@ -1,38 +1,62 @@
 name: Build R (Linux spike)
 
-# Phase 1a spike: proves the build + relocatability pipeline; uploads an artifact only, does not publish a Release yet.
+# Phase 1a spike: proves the build + relocatability pipeline across distro families/versions and R versions; uploads artifacts only, does not publish a Release yet.
 
 on:
   workflow_dispatch:
-    inputs:
-      r_version:
-        description: 'R version to build (must exist under https://cran.r-project.org/src/base/R-4/)'
-        required: true
-        default: '4.4.2'
   push:
     branches: [main]
     paths:
       - '.github/workflows/build-release.yml'
+      - 'scripts/patch-relocatable.py'
 
 jobs:
-  build-linux-x86_64:
+  build-linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        r_version: ['4.4.2', '4.3.3']
+        distro:
+          - { name: ubuntu-22.04, image: 'ubuntu:22.04', family: debian }
+          - { name: ubuntu-24.04, image: 'ubuntu:24.04', family: debian }
+          - { name: debian-11, image: 'debian:11', family: debian }
+          - { name: debian-12, image: 'debian:12', family: debian }
+          - { name: almalinux-8, image: 'almalinux:8', family: rhel }
+          - { name: almalinux-9, image: 'almalinux:9', family: rhel }
     runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.distro.image }}
     env:
-      R_VERSION: ${{ github.event.inputs.r_version || '4.4.2' }}
+      R_VERSION: ${{ matrix.r_version }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install build dependencies
+      - name: Install build dependencies (Debian/Ubuntu family)
+        if: matrix.distro.family == 'debian'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          apt-get update
+          apt-get install -y --no-install-recommends \
             build-essential xorg-dev gfortran \
             libpng-dev libjpeg-dev liblzma-dev libpcre2-dev \
             libcurl4-openssl-dev libharfbuzz-dev libfribidi-dev \
             libx11-dev libxext-dev libxrender-dev libxtst-dev libcairo2-dev \
             tcl-dev tk-dev libhdf5-dev libblosc-dev libhiredis-dev \
             libopenmpi-dev liblzo2-dev libomp-dev libreadline-dev \
-            bzip2 xz-utils
+            bzip2 xz-utils curl ca-certificates python3
+
+      - name: Install build dependencies (RHEL family)
+        if: matrix.distro.family == 'rhel'
+        run: |
+          dnf install -y epel-release dnf-plugins-core
+          dnf config-manager --set-enabled crb 2>/dev/null || dnf config-manager --set-enabled powertools 2>/dev/null || true
+          dnf install -y \
+            gcc gcc-c++ gcc-gfortran make \
+            libX11-devel libXext-devel libXrender-devel libXtst-devel libXt-devel \
+            libpng-devel libjpeg-turbo-devel xz-devel pcre2-devel \
+            libcurl-devel harfbuzz-devel fribidi-devel cairo-devel \
+            tcl-devel tk-devel hdf5-devel c-blosc-devel hiredis-devel \
+            openmpi-devel lzo-devel readline-devel \
+            bzip2 bzip2-devel xz curl ca-certificates python3
 
       - name: Download R source
         run: |
@@ -41,7 +65,7 @@ jobs:
           sha256sum "R-${R_VERSION}.tar.gz"
           tar -xzf "R-${R_VERSION}.tar.gz"
 
-      - name: Configure and build (matches cauldron-go's proven build-env-linux.yml flags)
+      - name: Configure and build
         working-directory: R-${{ env.R_VERSION }}
         env:
           CPPFLAGS: -I/usr/include -I/usr/include/xorg
@@ -59,8 +83,7 @@ jobs:
       - name: Install to staging prefix
         working-directory: R-${{ env.R_VERSION }}
         run: |
-          sudo mkdir -p /opt/r-portable-build
-          sudo chown "$USER" /opt/r-portable-build
+          mkdir -p /opt/r-portable-build
           make install
 
       - name: Make R launchers relocatable (patches bin/R and lib/R/bin/R in place, replaces Rscript with a thin wrapper)
@@ -77,16 +100,16 @@ jobs:
       - name: Package archive
         run: |
           cd /tmp/relocated/some/other/path
-          tar -cJf "$GITHUB_WORKSPACE/r-portable-${R_VERSION}-linux-x86_64.tar.xz" .
+          tar -cJf "$GITHUB_WORKSPACE/r-portable-${R_VERSION}-${{ matrix.distro.name }}-x86_64.tar.xz" .
 
       - name: Generate checksum
         run: |
-          sha256sum "r-portable-${R_VERSION}-linux-x86_64.tar.xz" > "r-portable-${R_VERSION}-linux-x86_64.tar.xz.sha256"
+          sha256sum "r-portable-${R_VERSION}-${{ matrix.distro.name }}-x86_64.tar.xz" > "r-portable-${R_VERSION}-${{ matrix.distro.name }}-x86_64.tar.xz.sha256"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: r-portable-${{ env.R_VERSION }}-linux-x86_64
+          name: r-portable-${{ env.R_VERSION }}-${{ matrix.distro.name }}-x86_64
           path: |
             r-portable-*.tar.xz
             r-portable-*.tar.xz.sha256
