@@ -62,13 +62,7 @@ jobs:
           for bin in R Rscript; do
             if [ -f "$bin" ] && [ ! -f "$bin.real" ]; then
               mv "$bin" "$bin.real"
-              cat > "$bin" <<'WRAPPER'
-#!/bin/sh
-DIR=$(cd "$(dirname "$0")" && pwd)
-export R_HOME="$DIR/../lib/R"
-exec "$DIR/BINNAME.real" "$@"
-WRAPPER
-              sed -i "s/BINNAME/$bin/" "$bin"
+              printf '#!/bin/sh\nDIR=$(cd "$(dirname "$0")" && pwd)\nexport R_HOME="$DIR/../lib/R"\nexec "$DIR/%s.real" "$@"\n' "$bin" > "$bin"
               chmod +x "$bin"
             fi
           done
