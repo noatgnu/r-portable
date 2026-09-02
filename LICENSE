@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 noatgnu
+Copyright (c) 2026 The University of Dundee
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -25,4 +25,4 @@ SOFTWARE.
 This license covers the build scripts, CI configuration, and tooling in this
 repository only. R itself, built and distributed via the release artifacts
 this repository produces, remains licensed under GPL-2/GPL-3 by the R
-Foundation -- see the COPYING file bundled inside each release archive.
+Foundation.

@@ -13,8 +13,7 @@ r-portable-<r-version>-<platform>-<arch>.<tar.xz|zip>
 r-portable-<r-version>-<platform>-<arch>.<tar.xz|zip>.sha256
 ```
 
-The `.sha256` sidecar contains a standard `sha256sum`-format line (`<hash>  <filename>`)
-for integrity verification before extraction.
+The `.sha256` sidecar contains a standard `sha256sum`-format line (`<hash>  <filename>`) for integrity verification before extraction.
 
 ## How to use
 
